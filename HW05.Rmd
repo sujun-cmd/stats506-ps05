@@ -1,0 +1,694 @@
+---
+title: "Problem Set #5 STATS 506"
+author: "Jun Su"
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+    html-math-method: mathml
+---
+
+**GitHub Repository:** [Homework 5 Repository](https://github.com/sujun-cmd/stats506-ps05)
+
+## Problem 1 - OOP Programming
+
+```{r}
+#' A Wald CI
+#' @slot lb 
+#' @slot ub  
+#' @slot mean 
+#' @slot se  
+#' @slot level (confidence level)
+setClass(
+  "waldCI",
+  slots = c(
+    lb = "numeric",
+    ub = "numeric",
+    mean = "numeric",
+    se = "numeric",
+    level = "numeric"
+  ),
+  prototype = list(
+    lb = 0,
+    ub = 0,
+    mean = 0,
+    se = 0,
+    level = 0.95
+  )
+)
+
+# Check valid inputs
+#' Check an interval
+#' @name waldCI-validity
+#' @param object a wald interval
+#' @returns TRUE if valid, or error
+setValidity("waldCI", function(object) {
+
+  values <- list(
+    lb = object@lb,
+    ub = object@ub,
+    mean = object@mean,
+    se = object@se,
+    level = object@level
+  )
+
+  for (v in values) {
+    if (length(v) != 1 || !is.finite(v)) {
+      return("All values must be ONE single number and finite")
+    }
+  }
+
+  if (object@level <= 0 || object@level >= 1) {
+    return("confidence level must larger than 0 and smaller than 1")
+  }
+
+  if (object@lb > object@ub) {
+    return("lb <= ub.")
+  }
+
+  if (object@se < 0) {
+    return("se must >=0")
+  }
+
+  TRUE
+})
+
+#' build a Wald interval
+#'
+#' Give mean and se, or lb and ub.
+#' @param mean The mean.
+#' @param se standard error
+#' @param level confidence level 
+#' @param lb  lower bound
+#' @param ub upper bound
+#' @returns a wald interval
+buildwaldCI <- function(mean = NULL, se = NULL, level = 0.95,
+                       lb = NULL, ub = NULL) {
+
+  if (!is.null(mean) && !is.null(se) && is.null(lb) && is.null(ub)) {
+    ci <- new("waldCI", mean = mean, se = se, level = level)
+    return(Bound2stat(ci))
+  }
+
+  if (!is.null(lb) && !is.null(ub) && is.null(mean) && is.null(se)) {
+    ci <- new("waldCI", lb = lb, ub = ub, level = level)
+    return(stats2Bounds(ci))
+  }
+
+  stop("Inputs not complete. Please check")
+}
+
+# set the method to show CI in the console
+#' Print the bounds
+#' @param object a waldCI interval.
+#' @returns NULL
+setMethod("show", "waldCI", function(object) {
+  cat("Wald CI: [", object@lb, ", ", object@ub, "]\n", sep = "")
+})
+
+# Tell the R that there exists a function called contains
+#' Check if a number is inside
+#' @param ci confidence level a wald interval
+#' @param x a number
+#' @returns whether x is contained
+setGeneric("contains", function(ci, x) {
+  standardGeneric("contains")
+})
+
+# Define contains
+#' @rdname contains
+setMethod("contains", "waldCI", function(ci, x) {
+  ci@lb <= x && x <= ci@ub
+})
+
+#' Check if two CIs overlap
+#' @param ci confidence level1 First CI
+#' @param ci confidence level2 Second CI
+#' @returns whether they overlap
+setGeneric("overlap", function(ci1, ci2) {
+  standardGeneric("overlap")
+})
+
+#' @rdname overlap
+setMethod("overlap", c("waldCI", "waldCI"), function(ci1, ci2) {
+  ci1@lb <= ci2@ub && ci2@lb <= ci1@ub
+})
+
+#' change both bounds
+#' @param ci confidence level a wald interval.
+#' @param fun a monotone function 
+#' @returns an interval with new bounds and its new mean and se
+setGeneric("transformCI", function(ci, fun) {
+  standardGeneric("transformCI")
+})
+
+#' @rdname transformCI
+setMethod("transformCI", c("waldCI", "function"), function(ci, fun) {
+  warning("Use a monotonic function.", call. = FALSE)
+  a <- fun(ci@lb)
+  b <- fun(ci@ub)
+  ci@lb <- min(a, b)
+  ci@ub <- max(a, b)
+  stats2Bounds(ci)
+})
+
+#' Get both bounds
+#' @param x a wald interval.
+#' @returns 2 numbers: lower bound, upper bound
+setMethod("as.numeric", "waldCI", function(x) {
+  c(x@lb, x@ub)
+})
+
+#' Get the lb
+#' @rdname waldCI-lb
+#' @param ci confidence level a Wald interval
+#' @returns the lower bound when read.
+setGeneric("lb", function(ci) {
+  standardGeneric("lb")
+})
+
+#' @rdname waldCI-lb
+setMethod("lb", "waldCI", function(ci) {
+  ci@lb
+})
+
+#' Get the ub
+#' @rdname waldCI-ub
+#' @param ci confidence level a Wald interval
+#' @returns the upper bound when read.
+setGeneric("ub", function(ci) {
+  standardGeneric("ub")
+})
+
+#' @rdname waldCI-ub
+setMethod("ub", "waldCI", function(ci) {
+  ci@ub
+})
+
+#' Get the mean
+#' @rdname waldCI-mean
+#' @param x A Wald interval.
+#' @returns the mean when read.
+setMethod("mean", "waldCI", function(x) {
+  x@mean
+})
+
+#' Get the standard error
+#' @rdname waldCI-sterr
+#' @param ci confidence level A Wald interval.
+#' @returns the standard error when read
+setGeneric("sterr", function(ci) {
+  standardGeneric("sterr")
+})
+
+#' @rdname waldCI-sterr
+setMethod("sterr", "waldCI", function(ci) {
+  ci@se
+})
+
+#' Get the ci level
+#' @rdname waldCI-level
+#' @param ci confidence level A Wald interval.
+#' @returns the ci level when read, .
+setGeneric("level", function(ci) {
+  standardGeneric("level")
+})
+
+#' @rdname waldCI-level
+setMethod("level", "waldCI", function(ci) {
+  ci@level
+})
+# keep all values updated with the changed bounds
+#' Calculate the mean and se 
+#' @param ci confidence level 
+#' @returns the new interval.
+stats2Bounds <- function(ci) {
+  validObject(ci)
+
+  z <- qnorm((1 - ci@level) / 2, lower.tail = FALSE)
+  ci@mean <- (ci@lb + ci@ub) / 2
+  ci@se <- (ci@ub - ci@lb) / (2 * z)
+
+  validObject(ci)
+  ci
+}
+
+# Renew the bounds after the mean, se, or level changes.
+#' keep the bounds updated 
+#' @param ci confidence level  
+#' @returns the new interval.
+Bound2stat <- function(ci) {
+  validObject(ci)
+
+  z <- qnorm((1 - ci@level) / 2, lower.tail = FALSE)
+  ci@lb <- ci@mean - z * ci@se
+  ci@ub <- ci@mean + z * ci@se
+
+  validObject(ci)
+  ci
+}
+
+# Define the five replacement generics.
+#' @rdname waldCI-lb
+#' @param value New lower bound.
+setGeneric("lb<-",    function(ci, value) standardGeneric("lb<-"))
+#' @rdname waldCI-ub
+#' @param value New upper bound.
+setGeneric("ub<-",    function(ci, value) standardGeneric("ub<-"))
+#' @rdname waldCI-mean
+#' @param ci confidence level  
+#' @param value New mean.
+setGeneric("mean<-",  function(ci, value) standardGeneric("mean<-"))
+#' @rdname waldCI-sterr
+#' @param value New se.
+setGeneric("sterr<-", function(ci, value) standardGeneric("sterr<-"))
+#' @rdname waldCI-level
+#' @param value New ci level
+setGeneric("level<-", function(ci, value) standardGeneric("level<-"))
+
+# Define how each setter updates a waldCI object.
+#' @rdname waldCI-lb
+setReplaceMethod("lb", "waldCI", function(ci, value) {
+  ci@lb <- value
+  stats2Bounds(ci)
+})
+
+#' @rdname waldCI-ub
+setReplaceMethod("ub", "waldCI", function(ci, value) {
+  ci@ub <- value
+  stats2Bounds(ci)
+})
+
+#' @rdname waldCI-mean
+setReplaceMethod("mean", "waldCI", function(ci, value) {
+  ci@mean <- value
+  Bound2stat(ci)
+})
+
+#' @rdname waldCI-sterr
+setReplaceMethod("sterr", "waldCI", function(ci, value) {
+  ci@se <- value
+  Bound2stat(ci)
+})
+
+#' @rdname waldCI-level
+setReplaceMethod("level", "waldCI", function(ci, value) {
+  ci@level <- value
+  Bound2stat(ci)
+})
+
+```
+
+```{r}
+ci1 <- buildwaldCI(lb = 17.2, ub = 24.7, level = 0.95)
+ci2 <- buildwaldCI(mean = 13, se = 2.5, level = 0.99)
+ci3 <- buildwaldCI(lb = 27.43, ub = 39.22, level = 0.75)
+ci1
+ci2
+ci3
+as.numeric(ci1)
+as.numeric(ci2)
+as.numeric(ci3)
+lb(ci2)
+ub(ci2)
+mean(ci1)
+sterr(ci3)
+level(ci2)
+lb(ci2) <- 10.5
+mean(ci3) <- 34
+level(ci3) <- .8
+contains(ci1, 17)
+contains(ci3, 44)
+overlap(ci1, ci2)
+eci1 <- transformCI(ci1, sqrt)
+eci1
+mean(transformCI(ci2, log))
+```
+Then, show that my validator does not allow the creation of invalid confidence intervals:
+```{r}
+# negative standard error
+try(buildwaldCI(mean = 13, se = -2.5, level = 0.99))
+
+# lb > ub
+try(buildwaldCI(lb = 47.2, ub = 24.7, level = 0.95))
+
+# Infinite bounds
+try(buildwaldCI(lb = 17.2, ub = Inf, level = 0.95))
+
+# invalid use of the setters
+ci_test <- buildwaldCI(lb = 17.2, ub = 24.7, level = 0.95)
+try(lb(ci_test) <- 30)
+as.numeric(ci_test)
+
+```
+
+## Q2. Tennis with data.table
+
+
+
+### Q2A. Number of Tournaments
+
+How many tournaments took place in 2019?
+
+ 
+```{r}
+library(readr)
+library(dplyr)
+library(data.table)
+
+tennis <- fread("data/atp_matches_2019.csv")
+tennis %>%
+  .[, .(n_matches = .N), by = tourney_id] %>%
+  .[, .(n_tournaments = .N)]
+```
+There are 128 tournaments in 2019. 
+
+### Q2B. Players with Multiple Tournament Wins
+
+Did any player win more than one tournament? If so, how many players did so, and how many tournaments did the most winning player(s) win?
+ 
+```{r}
+tournament_wins <- tennis %>%
+  .[round == "F"] %>%
+  .[, .(
+    n_tournaments = uniqueN(tourney_id)
+  ), by = .(winner_id, winner_name)] %>%
+  .[n_tournaments > 1] %>%
+  .[order(-n_tournaments)]
+tournament_wins$n_tournaments[1]
+
+length(tournament_wins$winner_id)
+```
+12 players win more than one tournament, the most winning player(s) won 5.
+
+### Q2C. Aces for Winners and Losers
+
+Is there evidence that winners have more aces than losers?
+
+- H0: mean difference = 0
+- H1: mean difference > 0
+ 
+```{r}
+library(infer)
+ace_data <- tennis %>%
+  .[, .(w_ace, l_ace)] %>%
+  .[!is.na(w_ace) & !is.na(l_ace)] %>%
+  .[, ace_diff := w_ace - l_ace]
+
+ 
+ace_data %>%
+  .[, .(
+    n_matches = .N,
+    mean_winner_aces = mean(w_ace),
+    mean_loser_aces = mean(l_ace),
+    mean_difference = mean(ace_diff)
+  )]
+
+ace_data %>%
+  t_test(
+    response = ace_diff,
+    mu = 0,
+    alternative = "greater"
+  )
+```
+p value = 1.530201e-34<0.05, reject H0, there's statistical evidence that winners have more aces than losers
+
+### Q2D. Highest Win Rate
+
+Identify the player(s) with the highest win rate among those who played at least five matches.
+
+```{r}
+wins <- tennis %>%
+  .[, .(won_games = .N), by = .(player_id = winner_id, player_name = winner_name)]
+
+losses <- tennis %>%
+  .[, .(lost_games = .N), by = .(player_id = loser_id)]
+
+wins %>%
+  merge(losses, by = "player_id", all = TRUE) %>%
+  .[, `:=`(
+    won_games = fcoalesce(won_games, 0L),
+    lost_games = fcoalesce(lost_games, 0L)
+  )] %>%
+  .[, all_games_played := won_games + lost_games] %>%
+  .[all_games_played >= 5] %>%
+  .[, win_rate := won_games / all_games_played] %>%
+  .[win_rate == max(win_rate)]
+```
+
+The player with highest win rate is Rafael Nadal whose rate is 0.8695652.
+
+## Q3. Visualization
+
+ 
+ 
+
+### Q3A. Major and Minor Spikes
+
+How many major and minor spikes in cases were there?
+```{r}
+library(ggplot2)
+covid <- read_csv("data/us-states.csv")
+daily_cases <- covid %>%
+  group_by(date) %>%
+  summarise(
+    cases_avg = sum(cases_avg, na.rm = TRUE),
+    .groups = "drop"
+  )  
+# Find the spikes within the 5 observed peak periods
+p <- ggplot(daily_cases, aes(date, cases_avg)) +
+  geom_line() +
+ 
+  scale_x_date(date_breaks = "6 months", date_labels = "%b %Y") +
+  scale_y_continuous(
+    labels = scales::label_comma(),
+    expand = expansion(mult = c(0.02, 0.15))
+  ) +
+  labs(
+    title = "Daily COVID-19 Cases Over Time (first look)",
+    x = NULL,
+    y = "Daily new cases (seven-day average)",
+    caption = "Source: The New York Times. Peaks selected within five periods."
+  ) +
+  theme(
+  panel.grid.minor = element_blank(),
+  plot.title = element_text(face = "bold"),
+  plot.margin = margin(t = 10, r = 35, b = 10, l = 10)
+)
+plotly::ggplotly(p) %>%
+  htmlwidgets::appendContent(htmltools::tags$small(style = "white-space: pre-line", p$labels$caption))
+```
+
+
+ 
+We can see that these are 2 main peaks and 3 smaller peaks. Then, we will need to label these peaks.
+
+
+
+```{r}
+peaks <- daily_cases %>%
+  mutate(period = case_when(
+    date >= "2020-11-01" & date <= "2021-02-28" ~ 1,
+    date >= "2021-07-01" & date <= "2021-10-31" ~ 2,
+    date >= "2021-12-01" & date <= "2022-02-28" ~ 3,
+    date >= "2022-06-01" & date <= "2022-09-30" ~ 4,
+    date >= "2022-12-01" & date <= "2023-02-28" ~ 5
+  )) %>%
+  filter(!is.na(period)) %>%
+  group_by(period) %>%
+  slice_max(cases_avg, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(label = paste(
+    ifelse(period %in% c(1, 3), "Major", "Minor"),
+    format(date, "%b %Y"),
+    sep = "\n"
+  ))
+
+# Plot the peaks
+
+p <- ggplot(daily_cases, aes(date, cases_avg)) +
+  geom_line() +
+  geom_point(data = peaks) +
+  geom_text(data = peaks, aes(label = label),vjust = -0.3) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b %Y") +
+  scale_y_continuous(
+    labels = scales::label_comma(),
+    expand = expansion(mult = c(0.02, 0.15))
+  ) +
+  labs(
+    title = "Daily COVID-19 Cases Over Time",
+    x = NULL,
+    y = "Daily new cases (seven-day average)",
+    caption = "Source: The New York Times. Peaks selected within five periods."
+  ) +
+  theme(
+  panel.grid.minor = element_blank(),
+  plot.title = element_text(face = "bold"),
+  plot.margin = margin(t = 10, r = 35, b = 10, l = 10)
+) 
+plotly::ggplotly(p) %>%
+  htmlwidgets::appendContent(htmltools::tags$small(style = "white-space: pre-line", p$labels$caption))
+   
+```
+I found two major spikes, one in Jan 2022, the other in Jan 2021. I also observed 3 relatively prominent minor peaks, with smaller fluctuations occurring earlier in the series. I treated small fluctuations (especially these early stages in 2020) within the same overall rise-and-fall cycle as part of a single peak rather than counting them separately.
+
+### Q3B. Highest and Lowest Rates per Population
+
+For the states with the highest and lowest overall rates per population, what differences appear in their trajectories over time?
+
+```{r}
+# Calculate the avg cases_avg_per_100k rate for each state during the whole COVID period
+state_rates <- covid %>%
+  filter(state %in% state.name) %>%
+  group_by(state) %>%
+  summarise(
+    mean_rate = mean(cases_avg_per_100k, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Select states with the highest and lowest rates
+selected_states <- bind_rows(
+  state_rates %>%
+    slice_max(mean_rate, n = 1) %>%
+    mutate(rate_group = "Highest"),
+  state_rates %>%
+    slice_min(mean_rate, n = 1) %>%
+    mutate(rate_group = "Lowest")
+)
+
+selected_states
+
+# Plot their trajectories over time
+p <- covid %>%
+  inner_join(selected_states, by = "state") %>%
+  ggplot(aes(
+    x = date,
+    y = cases_avg_per_100k,
+    color = state
+  )) +
+  geom_line() +
+  scale_x_date(
+    date_breaks = "6 months",
+    date_labels = "%b %Y"
+  ) +
+  labs(
+    title = "COVID-19 Trends in States with Highest and Lowest Average Rates",
+    subtitle = "States selected by their mean daily case rate over available dates",
+    y = "Daily cases per 100k people (7d average)",
+    color = "State",
+    caption = "Source: The New York Times"
+  )  
+plotly::ggplotly(p) %>%
+  plotly::layout(title = list(text = paste0(p$labels$title, "<br><sup>", p$labels$subtitle, "</sup>"))) %>%
+  htmlwidgets::appendContent(htmltools::tags$small(style = "white-space: pre-line", p$labels$caption))
+```
+The highest is Rhode Island while the lowest is Maryland.
+Both states reached their highest peaks in January 2022, at nearly the same time.
+1. Rhode Island had noticeably higher peaks in late 2020–early 2021 and January 2022.
+2. The highest seven-day average of daily new cases per 100,000 people was approximately 507 in Rhode Island and 222 in Maryland, making Rhode Island’s peak about 2.3 times Maryland’s.
+3. Both states saw sharp declines after their January 2022 peaks. Rhode Island also experienced a noticeable resurgence in the following spring.
+
+### Q3C. First Five Substantially Affected States
+
+Identify, to the best of your ability without a formal test, the first five states to experience Covid in a substantial way.
+ 
+```{r}
+# First, look at the early stages of COVID
+plotly::ggplotly(
+covid %>%
+  filter(
+    date < as.Date("2020-05-01"),
+    state %in% state.name
+  ) %>%
+  ggplot(aes(
+    x = date,
+    y = cases_avg_per_100k,
+    group = state
+  )) +
+  geom_line(alpha = 0.5) +
+  labs(
+    title = "Early COVID-19 Trends by State",
+    x = "Date",
+    y = "Daily cases per 100,000 people (seven-day average)"
+  ) +
+  theme_minimal()
+)
+```
+We found that the cases increased sharply since mid march. Take 5 as a threshold of experiencing Covid in a substantial way. 
+```{r}
+first_reached <- covid %>%
+  filter(
+    state %in% state.name,
+    cases_avg_per_100k >= 5
+  ) %>%
+  group_by(state) %>%
+  summarise(
+    first_date = min(date),
+    .groups = "drop"
+  ) %>%
+  arrange(first_date)
+
+first_five <- first_reached %>%
+  slice_min(first_date, n = 5)
+
+first_five
+```
+New York, New Jersey, Louisiana, and Massachusetts were the first four states to reach the threshold for being substantially affected by COVID-19, with Connecticut and Michigan tied for fifth.
+```{r}
+first_points <- covid %>%
+  inner_join(
+    first_five,
+    by = c("state", "date" = "first_date")
+  )
+p <- covid %>%
+  semi_join(first_five, by = "state") %>%
+  filter(
+    date >= as.Date("2020-03-01"),
+    date <= as.Date("2020-04-10")
+  ) %>%
+  ggplot(aes(
+    x = date,
+    y = cases_avg_per_100k,
+    color = state
+  )) +
+  geom_hline(
+    yintercept = 5,
+    linetype = "dashed",
+    color = "gray"
+  ) +
+  geom_line() +
+  geom_point(
+    data = first_points,
+  ) +
+  
+  scale_x_date(
+    limits = as.Date(c("2020-03-01", "2020-04-10")),
+    date_breaks = "1 week",
+    date_labels = "%b %d",
+    expand = expansion(mult = c(0.01, 0.02))
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Early COVID-19 Trends in the First Substantially Affected States",
+    subtitle = "6 states shown: Connecticut and Michigan tied for 5th",
+    x = NULL,
+    y = "Daily cases per 100,000 people\n(7d average)",
+    color = "State",
+    caption = paste(
+      "Dashed line: threshold of 5 daily cases per 100,000 residents.",
+      "Points: first dates reaching the threshold.",
+      "Source: The New York Times.",
+      sep = "\n"
+    )
+  )  
+plotly::ggplotly(p) %>%
+  plotly::layout(title = list(text = paste0(p$labels$title, "<br><sup>", p$labels$subtitle, "</sup>"))) %>%
+  htmlwidgets::appendContent(htmltools::tags$small(style = "white-space: pre-line", p$labels$caption))
+  
+```
+## Attribution of Sources
+
+OpenAI ChatGPT was used to review my draft against the assignment
+requirements and to explain the help documents. I wrote, reviewed, and verified the final code
+myself.
+
